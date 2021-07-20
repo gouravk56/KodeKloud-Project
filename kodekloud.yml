@@ -1,0 +1,105 @@
+- hosts: all
+  become: true
+  tasks:
+  - name : install packages
+    yum:
+      name: "{{ item }}"
+      state: present
+    loop:
+     - libselinux-python
+     - libsemanage-python
+     - firewalld
+
+- hosts: lamp-db
+  become: true
+  tasks:
+  - name: install packagaes
+    yum:
+      name: "{{ item }}"
+      state: present
+      loop:
+       - mariadb-server
+       - MySQL-python
+
+  - name: copy the config file
+    copy:
+      src: files/my.cnf
+      dest: /etc/my.cnf
+      remote_src: yes
+
+  - name: start mariadb
+    service:
+      name: "{{ item }}"
+      state: started
+    loop:
+     - mariadb
+     - firewalld
+
+  - name: firewalld
+    firewalld:
+      zone: publc
+      port: 3306/tcp
+      state: present
+      
+  
+  - name: create application database
+    mysql_db:
+      name: "{{mysql_db}}"
+      state: present
+
+  - name:  Mysql user
+    mysql_user:
+       name: "{{ dbuser }}"
+       password: "{{ dbpassword }}"
+       priv: '*.*:ALL'
+       host: 172.20.1.100
+  
+  - name: laod db script
+    copy:
+       src: db-load-script.sql
+       dest: /tmp
+  - name: shell cmmd
+    shell: mysql -f < /tmp/db-load-script.sql
+- hosts: lamp-web
+  become: true
+  tasks:
+  - name: install package
+    yum:
+      name: '{{ item }}'
+      state: present
+    loop:
+     - httpd
+     - php
+     - php-mysql
+     - git
+  - name: start firewalld service
+    service:
+      name: firewalld
+      state: started
+  - name:
+    firewalld:
+      port: "{{ httpd_port }}/tcp"
+      state: enabled
+      immediate: yes
+
+  - name: set index as default
+    replace:
+       path: /etc/httpd/conf/httpd.conf
+       regexp: "DirectoryIndex index.html"
+       replace: "DirectoryIndex index.php"
+
+  - name: start httpd
+    service:
+       name: httpd
+       state: started
+       enabled: yes
+
+  - name: git clone
+    git:
+      repo: "{{repository}}"
+      dest: /var/www/html/
+
+  - name: copy
+    copy:
+      src: files/index.php
+      dest: /var/www/html/index.php
